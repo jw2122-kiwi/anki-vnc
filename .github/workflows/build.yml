@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-anki-desktop:
     strategy:
       matrix:
         platform: [linux/amd64, linux/arm64]
@@ -19,5 +19,22 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           push: false
-          cache-from: type=gha,scope=${{ matrix.platform }}
-          cache-to: type=gha,mode=min,scope=${{ matrix.platform }}
+          cache-from: type=gha,scope=anki-${{ matrix.platform }}
+          cache-to: type=gha,mode=min,scope=anki-${{ matrix.platform }}
+
+  build-mcp:
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build MCP image (${{ matrix.platform }})
+        uses: docker/build-push-action@v6
+        with:
+          context: ./mcp
+          platforms: ${{ matrix.platform }}
+          push: false
+          cache-from: type=gha,scope=mcp-${{ matrix.platform }}
+          cache-to: type=gha,mode=min,scope=mcp-${{ matrix.platform }}

@@ -34,6 +34,7 @@ session) persists in `./data` across container restarts and upgrades.
 | `8765` | AnkiConnect HTTP API | binds to the container's `0.0.0.0`; only reachable from the host by default |
 | `5900` | VNC (x11vnc) | ⚠️ no password — use on trusted networks or via SSH tunnel |
 | `8780` | noVNC web client | browser-based VNC, no client install needed |
+| `8890` | **MCP server** (streamable HTTP) | endpoint `/mcp`, exposes the collection to AI clients |
 
 ## AnkiConnect
 
@@ -60,16 +61,50 @@ consider setting an API key in `data/addons21/AnkiConnect/config.json`
 ## Files
 
 - `Dockerfile` — pinned Anki release + AnkiConnect plugin + X stack
-- `compose.yaml` — ports, persistence (`./data`), healthcheck
+- `compose.yaml` — services (Anki desktop, MCP server), ports, persistence (`./data`), healthcheck
+- `mcp/` — MCP server bridging AnkiConnect (`server.py`)
 - `supervisord.conf` — process management inside the container
 - `anki-launcher` — X display wait, AnkiConnect refresh, profile pick
 - `seed-prefs.py` — first-run wizard skip (writes `prefs21.db`)
+- `.github/workflows/` — `build.yml` (two-arch images on every push), `update.yml` (weekly dependency-bump PR)
 
-## Upgrading
+## MCP server (AI assistants)
 
-- Anki: bump the pinned version + URL in `Dockerfile`, then
-  `docker compose up -d --build`. Collections sync safely with AnkiWeb.
-- AnkiConnect: bump `ANKICONNECT_VERSION` (github.com/FooSoft/anki-connect).
+The `mcp` service (in `./mcp`) bridges AnkiConnect into the
+[Model Context Protocol](https://modelcontextprotocol.io): your AI client can
+list decks, search cards, add notes, and trigger AnkiWeb sync.
+
+Streamable HTTP endpoint:
+
+```
+http://<host>:8890/mcp
+```
+
+For clients that only support stdio transport, bridge with
+[`mcp-remote`](https://github.com/geelen/mcp-remote):
+
+```json
+{
+  "mcpServers": {
+    "anki": { "command": "npx", "args": ["-y", "mcp-remote", "http://localhost:8890/mcp"] }
+  }
+}
+```
+
+Tools: `collection_overview`, `deck_stats`, `create_deck`, `search_cards`,
+`add_note`, `delete_notes`, `sync_with_ankiweb` — plus a `study_session`
+prompt. The server is unauthenticated; protect port 8890 like the rest.
+
+## Automated updates
+
+A scheduled workflow (`.github/workflows/update.yml`, Mondays 06:00 UTC)
+compares the pinned versions in the `Dockerfile` against the latest
+[Anki desktop](https://github.com/ankitects/anki/releases) and
+[AnkiConnect](https://github.com/FooSoft/anki-connect/releases) releases and
+opens a PR when either is outdated. Merging the PR triggers the multi-arch
+build workflow; rebuild your deployment with
+`docker compose up -d --build`. Run it on demand via
+*Actions → update-deps → Run workflow*.
 
 ## Security notes
 

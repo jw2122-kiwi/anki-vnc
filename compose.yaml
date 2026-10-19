@@ -21,3 +21,17 @@ services:
       timeout: 5s
       retries: 3
       start_period: 120s
+
+  # MCP server: exposes the Anki collection to AI clients (Claude, etc.)
+  # streamable HTTP at http://localhost:8890/mcp
+  mcp:
+    build:
+      context: ./mcp
+      dockerfile: Dockerfile
+    container_name: anki-mcp
+    restart: unless-stopped
+    depends_on:
+      anki-connect:
+        condition: service_healthy
+    ports:
+      - "8890:8000"

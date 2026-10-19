@@ -1,0 +1,68 @@
+name: update-deps
+on:
+  schedule:
+    - cron: "0 6 * * 1" # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Current versions in Dockerfile
+        id: current
+        run: |
+          {
+            echo "anki=$(grep -o 'ankitects/anki/releases/download/[0-9.]*/' Dockerfile | grep -o '[0-9.]*')"
+            echo "ankiconnect=$(grep -o 'ANKICONNECT_VERSION=[0-9.]*' Dockerfile | cut -d= -f2)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Latest upstream releases
+        id: latest
+        run: |
+          {
+            echo "anki=$(curl -fsSL https://api.github.com/repos/ankitects/anki/releases/latest | grep -o '"tag_name": *"[^"]*"' | grep -o '[0-9.]*')"
+            echo "ankiconnect=$(curl -fsSL https://api.github.com/repos/FooSoft/anki-connect/releases/latest | grep -o '"tag_name": *"[^"]*"' | grep -o '[0-9.]*')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create update PR if outdated
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          OLD_AM="$ANKI_OLD"; NEW_AM="$ANKI_NEW"; OLD_AC="$AC_OLD"; NEW_AC="$AC_NEW"
+          echo "Anki: $OLD_AM -> $NEW_AM | AnkiConnect: $OLD_AC -> $NEW_AC"
+          if [ "$OLD_AM" = "$NEW_AM" ] && [ "$OLD_AC" = "$NEW_AC" ]; then
+            echo "Nothing to update."
+            exit 0
+          fi
+          BRANCH="update/anki-$NEW_AM-ankiconnect-$NEW_AC"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          # Replace BOTH occurrences of each version token in the Dockerfile
+          sed -i "s|/$OLD_AM/anki-$OLD_AM-linux-|/$NEW_AM/anki-$NEW_AM-linux-|g" Dockerfile
+          sed -i "s|ANKICONNECT_VERSION=$OLD_AC|ANKICONNECT_VERSION=$NEW_AC|" Dockerfile
+          git diff --stat
+          if git diff --quiet; then
+            echo "Dockerfile unchanged unexpectedly."; exit 1
+          fi
+          git commit -am "chore: bump anki desktop $OLD_AM -> $NEW_AM, anki-connect $OLD_AC -> $NEW_AC"
+          git push -u origin "$BRANCH"
+          gh pr create \
+            --title "chore: update Anki $NEW_AM / AnkiConnect $NEW_AC" \
+            --body "Automated dependency bump from scheduled CI. Merging triggers the two-arch build in CI; review the release notes before merging:
+          - https://github.com/ankitects/anki/releases
+          - https://github.com/FooSoft/anki-connect/releases" \
+            --label dependencies || true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ANKI_OLD: ${{ steps.current.outputs.anki }}
+          ANKI_NEW: ${{ steps.latest.outputs.anki }}
+          AC_OLD: ${{ steps.current.outputs.ankiconnect }}
+          AC_NEW: ${{ steps.latest.outputs.ankiconnect }}
