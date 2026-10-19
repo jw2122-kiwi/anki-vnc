@@ -1,0 +1,23 @@
+services:
+  anki-connect:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    tty: true
+    stdin_open: true
+    container_name: anki-connect
+    restart: unless-stopped
+    ipc: "shareable"
+    ports:
+      - "8765:8765" # AnkiConnect HTTP API
+      - "5900:5900" # VNC (x11vnc; no password - LAN use)
+      - "8780:8780" # noVNC web client (browser access)
+    volumes:
+      - ./data:/data/anki # persistent Anki profiles / collections
+    healthcheck:
+      test: |
+        wget -qO- --header='Content-Type: application/json' --post-data='{"action":"version","version":6}' http://localhost:8765 || exit 1
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s

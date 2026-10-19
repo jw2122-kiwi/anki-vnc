@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Launch Anki against a persistent profile base ($ANKI_BASE, default /data/anki).
+#
+# Fully unattended boots:
+# - On first run (no profile yet): seed a minimal prefs21.db (language pref +
+#   firstRun=false) so Anki skips its interactive first-run wizard, then open
+#   the default profile "User 1". Anki creates the collection on first open.
+# - Subsequent runs: auto-open the one existing profile, so Anki + AnkiConnect
+#   come back up after a container restart. AnkiWeb sync then runs with the
+#   credentials saved on the first interactive login.
+set -euo pipefail
+
+BASE="${ANKI_BASE:-/data/anki}"
+export ANKI_BASE="$BASE"
+
+# Anki's QtWebEngine (Chromium) refuses to start as root without --no-sandbox
+source /usr/local/bin/anki-env 2>/dev/null || true
+export QTWEBENGINE_CHROMIUM_FLAGS="${QTWEBENGINE_CHROMIUM_FLAGS:-} --no-sandbox --disable-gpu"
+
+# Wait for the virtual X display to exist (supervisord starts everything at
+# once; Anki's Qt crashes out on a race with Xvfb otherwise).
+for i in $(seq 1 30); do
+  if [ -S /tmp/.X11-unix/X99 ]; then
+    break
+  fi
+  sleep 1
+done
+
+mkdir -p "$BASE/addons21"
+
+# Refresh AnkiConnect from the bundled copy (preserves any user meta.json).
+mkdir -p "$BASE/addons21/AnkiConnect"
+cp -a /usr/local/share/anki-connect/AnkiConnect/. "$BASE/addons21/AnkiConnect/"
+
+# Skip Anki's interactive first-run wizard on cold boots (language picker +
+# profile setup). Anki still shows the normal sync login when you click Sync.
+if [ ! -s "$BASE/prefs21.db" ]; then
+  echo "First boot: seeding Anki prefs (skips first-run wizard)"
+  python3 /usr/local/bin/seed-prefs.py "$BASE/prefs21.db" || true
+fi
+
+# Detect an existing profile (a profile dir contains collection.anki2); else
+# default to "User 1", which Anki creates on first open.
+PROFILE=$(
+  python3 - "$BASE" <<'PYEOF'
+import glob, os, sys
+base = sys.argv[1]
+hits = glob.glob(os.path.join(base, "*", "collection.anki2"))
+name = os.path.basename(os.path.dirname(hits[0])) if hits else "User 1"
+import urllib.parse
+print(urllib.parse.unquote(name))
+PYEOF
+)
+
+echo "Opening Anki profile: $PROFILE"
+exec /usr/local/bin/anki -b "$BASE" -p "$PROFILE"
