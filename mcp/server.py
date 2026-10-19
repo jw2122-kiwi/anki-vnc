@@ -107,7 +107,20 @@ async def add_note(deck: str, front: str, back: str, tags: list[str] | None = No
             "options": {"allowDuplicate": True, "duplicateScope": "deck"},
         },
     )
-    return result["noteId"]
+    # AnkiConnect returns the note id as a bare int (null on failure).
+    if result is None:
+        raise RuntimeError("addNote failed (invalid deck or model?)")
+    note_id = result if isinstance(result, int) else result.get("noteId", result)
+
+    # Some Anki/AnkiConnect combinations ignore deckName on addNote and drop
+    # the cards into the current deck (e.g. the localized default deck);
+    # move them to the requested deck if they landed elsewhere.
+    card_ids = await _anki("findCards", query=f"nid:{note_id}")
+    if card_ids:
+        cards = await _anki("cardsInfo", cards=card_ids)
+        if cards and cards[0].get("deckName", "") != deck:
+            await _anki("changeDeck", cards=card_ids, deck=deck)
+    return note_id
 
 
 @mcp.tool()
