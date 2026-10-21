@@ -1,3 +1,4 @@
 data/
+.env
 *.bak
 *.log

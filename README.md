@@ -75,6 +75,45 @@ consider setting an API key in `data/addons21/AnkiConnect/config.json`
 - `.github/workflows/` — `build.yml` (two-arch images on every push),
   `update.yml` (weekly dependency-bump PR)
 
+## Optional fonts
+
+Language fonts are **build args and disabled by default**. Most deployments
+only use the AnkiConnect API and the MCP server and never render a card, so
+the fonts would be pure overhead — the CJK set alone is 88 MB.
+
+Enable only what your collection needs, in `compose.yaml` or a `.env` file:
+
+```sh
+# .env
+FONT_ARABIC=true
+```
+
+| Flag | Package | Size | Languages |
+| --- | --- | --- | --- |
+| `FONT_ARABIC` | `font-noto-arabic` | 18 MB | Arabic, Persian, Urdu |
+| `FONT_CJK` | `font-noto-cjk` | 88 MB | Chinese, Japanese, Korean |
+| `FONT_DEVANAGARI` | `font-noto-devanagari` | 26 MB | Hindi, Nepali, Sanskrit |
+| `FONT_BENGALI` | `font-noto-bengali` | 18 MB | Bengali, Assamese |
+| `FONT_THAI` | `font-noto-thai` | 5 MB | Thai |
+| `FONT_HEBREW` | `font-noto-hebrew` | 2 MB | Hebrew |
+| `FONT_SYMBOLS` | `font-noto-symbols` | 3 MB | symbols, arrows |
+| `FONT_MATH` | `font-noto-math` | 1 MB | mathematical notation |
+
+A flag change needs a rebuild:
+
+```sh
+docker compose up -d --build
+```
+
+Check which fonts ended up in the image:
+
+```sh
+docker exec anki-lite fc-list | wc -l
+docker exec anki-lite fc-list :lang=ar
+```
+
+Without the matching font, cards in that script render as empty boxes.
+
 ## MCP server (AI assistants)
 
 The `mcp` service (in `./mcp`) bridges AnkiConnect into the
@@ -116,8 +155,8 @@ The image uses Alpine's own `anki` package, not the upstream Linux tarball
   the healthcheck therefore targets `127.0.0.1`.
 - **`/dev/shm` is raised to 256 MB** (`shm_size` in `compose.yaml`); Chromium
   needs more than Docker's 64 MB default.
-- **Fonts**: `font-noto` plus `-arabic`, `-symbols` and `-math` are installed.
-  Without the Arabic font, Arabic cards render as empty boxes.
+- **Fonts**: `font-noto` is always installed. The language fonts are optional
+  build args, see [Optional fonts](#optional-fonts).
 - **HTTPS**: `py3-truststore` is required, otherwise Anki cannot use the
   system certificate store and the AnkiWeb sync is not safe.
 

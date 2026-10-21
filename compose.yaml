@@ -3,6 +3,19 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Optional fonts, all disabled by default. Enable only the languages
+        # your collection actually uses - the CJK set alone adds 88 MB to the
+        # image. Changing a flag requires a rebuild:
+        #   docker compose up -d --build
+        FONT_ARABIC: ${FONT_ARABIC:-false}      # Arabic/Persian/Urdu, 18 MB
+        FONT_CJK: ${FONT_CJK:-false}             # Chinese/Japanese/Korean, 88 MB
+        FONT_HEBREW: ${FONT_HEBREW:-false}      # Hebrew, 2 MB
+        FONT_THAI: ${FONT_THAI:-false}          # Thai, 5 MB
+        FONT_DEVANAGARI: ${FONT_DEVANAGARI:-false}  # Hindi/Nepali/Sanskrit, 26 MB
+        FONT_BENGALI: ${FONT_BENGALI:-false}    # Bengali/Assamese, 18 MB
+        FONT_SYMBOLS: ${FONT_SYMBOLS:-false}    # symbols, 3 MB
+        FONT_MATH: ${FONT_MATH:-false}          # mathematical notation, 1 MB
     container_name: anki-lite
     restart: unless-stopped
     ports:

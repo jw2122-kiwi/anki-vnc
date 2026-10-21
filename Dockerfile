@@ -24,13 +24,64 @@ RUN apk add --no-cache \
       novnc \
       websockify \
       font-noto \
-      font-noto-arabic \
-      font-noto-symbols \
-      font-noto-math \
       ca-certificates \
       tzdata \
       s6-overlay \
  && rm -rf /var/cache/apk/*
+
+# Optional extra fonts, disabled by default.
+#
+# Most deployments only use the AnkiConnect API and the MCP server, and never
+# render a card, so the language fonts are pure overhead (the CJK set alone is
+# 88 MB). Enable only what the collection actually needs, e.g. in
+# compose.yaml:
+#
+#     build:
+#       args:
+#         FONT_ARABIC: "true"
+#         FONT_CJK: "true"
+#
+# Each flag adds one Alpine font package:
+#   FONT_ARABIC   font-noto-arabic      18 MB  Arabic, Persian, Urdu
+#   FONT_CJK      font-noto-cjk         88 MB  Chinese, Japanese, Korean
+#   FONT_HEBREW   font-noto-hebrew       2 MB  Hebrew
+#   FONT_THAI     font-noto-thai         5 MB  Thai
+#   FONT_DEVANAGARI font-noto-devanagari 26 MB  Hindi, Nepali, Sanskrit
+#   FONT_BENGALI  font-noto-bengali     18 MB  Bengali, Assamese
+#   FONT_SYMBOLS  font-noto-symbols      3 MB  maths, arrows, symbols
+#   FONT_MATH     font-noto-math         1 MB  mathematical notation
+#
+# The flags are build args, so changing one means a rebuild
+# (docker compose up -d --build).
+ARG FONT_ARABIC=false
+ARG FONT_CJK=false
+ARG FONT_HEBREW=false
+ARG FONT_THAI=false
+ARG FONT_DEVANAGARI=false
+ARG FONT_BENGALI=false
+ARG FONT_SYMBOLS=false
+ARG FONT_MATH=false
+
+RUN set -eu; \
+    for pair in \
+      "FONT_ARABIC:font-noto-arabic" \
+      "FONT_CJK:font-noto-cjk" \
+      "FONT_HEBREW:font-noto-hebrew" \
+      "FONT_THAI:font-noto-thai" \
+      "FONT_DEVANAGARI:font-noto-devanagari" \
+      "FONT_BENGALI:font-noto-bengali" \
+      "FONT_SYMBOLS:font-noto-symbols" \
+      "FONT_MATH:font-noto-math" \
+    ; do \
+      flag="${pair%%:*}"; pkg="${pair##*:}"; \
+      eval "enabled=\${$flag}"; \
+      if [ "$enabled" = "true" ]; then \
+        echo "Installing optional font: $pkg"; \
+        apk add --no-cache "$pkg"; \
+      fi; \
+    done; \
+    rm -rf /var/cache/apk/*; \
+    fc-cache -f >/dev/null 2>&1 || true
 
 ENV DISPLAY=":99" \
     LANG=C.UTF-8 \
