@@ -1,5 +1,6 @@
 name: build
-on:
+# Quoted: in YAML 1.1 a bare `on` is parsed as the boolean True.
+"on":
   push:
   pull_request:
   workflow_dispatch:

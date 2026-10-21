@@ -68,9 +68,9 @@ jobs:
           fi
           git commit -am "chore: bump anki-connect $AC_OLD -> $AC_NEW"
           git push -u origin "$BRANCH"
+          BODY="Automated dependency bump from scheduled CI. Merging triggers the two-arch build in CI."
+          BODY="$BODY Alpine's anki package is currently $ANKI_OLD; it is not pinned in the Dockerfile, so rebuilding picks it up."
           gh pr create \
             --title "chore: update AnkiConnect $AC_NEW" \
-            --body "Automated dependency bump from scheduled CI. Merging triggers the two-arch build in CI.
-
-Alpine's \`anki\` package is currently $ANKI_OLD; it is not pinned in the Dockerfile, so rebuilding picks it up." \
+            --body "$BODY" \
             --label dependencies || true
