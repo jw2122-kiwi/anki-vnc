@@ -1,0 +1,3 @@
+#!/bin/sh
+# noVNC web client: serves the HTML client and bridges it to the VNC port.
+exec websockify --web /usr/share/novnc 8780 localhost:5900

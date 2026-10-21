@@ -1,58 +1,65 @@
-FROM ubuntu:latest
+# anki-lite - lightweight Anki + AnkiConnect + noVNC stack on Alpine
+#
+# Why Alpine: the official Anki Linux tarball is glibc-linked (needs GLIBC_2.35),
+# so it cannot run on musl/Alpine. But Alpine ships its own `anki` package
+# (community/anki) built against musl with the same PyQt6/QtWebEngine stack.
+#
+# Process supervision uses s6-overlay (Alpine's native supervisor) instead of
+# supervisor (not packaged for Alpine).
+FROM alpine:edge
 
-# Buildx provides TARGETARCH (amd64 / arm64); Anki's release assets use x86_64 / aarch64
-ARG TARGETARCH
-ENV DEBIAN_FRONTEND=noninteractive \
+# - Runtime: anki (pulls PyQt6 + QtWebEngine/Chromium), xvfb, openbox, x11vnc,
+#   novnc + websockify, fonts.
+# - py3-truststore: Anki warns without it ("System certificate store and custom
+#   SSL certificates may not work") and AnkiWeb sync is HTTPS-only.
+# - No build tools, no -dev headers: nothing is compiled in this image.
+RUN apk add --no-cache \
+      anki \
+      py3-truststore \
+      py3-xdg \
+      bash \
+      xvfb \
+      x11vnc \
+      openbox \
+      novnc \
+      websockify \
+      font-noto \
+      font-noto-arabic \
+      font-noto-symbols \
+      font-noto-math \
+      ca-certificates \
+      tzdata \
+      s6-overlay \
+ && rm -rf /var/cache/apk/*
+
+ENV DISPLAY=":99" \
     LANG=C.UTF-8 \
-    LC_ALL=C.UTF-8
+    LC_ALL=C.UTF-8 \
+    QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu" \
+    ANKI_BASE=/data/anki \
+    XDG_RUNTIME_DIR=/tmp/xdg
 
-# Base deps for Anki's Qt GUI + a lightweight headless X stack:
-#   Xvfb (virtual display) + openbox (WM) + x11vnc (VNC server) + noVNC (browser client)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      locales ca-certificates wget zstd xz-utils tar unzip xdg-utils \
-      libxcb-xinerama0 libxcb-cursor0 libnss3 libxcb-icccm4 libxcb-keysyms1 \
-      libegl-dev libsnappy-dev libopus-dev libxdamage-dev libwebp-dev \
-      libasound-dev libminizip-dev liblcms2-dev \
-      libgbm1 libxkbcommon-x11-0 libgl1 libegl1 libxcomposite1 libxdamage1 \
-      libxrandr2 libxfixes3 libxcursor1 libxtst6 libxi6 libxkbfile1 \
-      libxcb-shape0 libxcb-shm0 libxcb-render-util0 \
-      fonts-dejavu-core \
-      xvfb x11vnc x11-utils xdotool openbox novnc python3-websockify supervisor \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Anki from the official release tarball (auto-arch matching via ARG)
-RUN case "${TARGETARCH}" in \
-      amd64) ANKI_ARCH=x86_64 ;; \
-      arm64) ANKI_ARCH=aarch64 ;; \
-      *) echo "unsupported TARGETARCH: ${TARGETARCH}" >&2; exit 1 ;; \
-    esac \
- && cd /tmp \
- && wget -q "https://github.com/ankitects/anki/releases/download/26.09.3/anki-26.09.3-linux-${ANKI_ARCH}.tar.zst" \
- && tar xaf anki-*.tar.zst \
- && cd anki-*.tar \
- && ./install.sh \
- && rm -rf /tmp/anki-*
-
-# Bundle the AnkiConnect plugin; a startup script copies it into the
-# persistent profile base (so we get the while keeping user config).
+# The AnkiConnect addon is downloaded here, not committed to the repo, and is
+# unpacked into the persistent profile base at boot by anki-launcher. An image
+# update therefore never overwrites the user's addon config.
 ARG ANKICONNECT_VERSION=23.10.29.0
 RUN wget -qO /tmp/AnkiConnect.zip \
       "https://github.com/FooSoft/anki-connect/releases/download/${ANKICONNECT_VERSION}/AnkiConnect.zip" \
  && mkdir -p /usr/local/share/anki-connect/AnkiConnect \
  && unzip -q /tmp/AnkiConnect.zip -d /usr/local/share/anki-connect/AnkiConnect \
- && rm -f /tmp/AnkiConnect.zip \
- && printf '{\n  "webBindAddress": "0.0.0.0",\n  "webBindPort": 8765\n}\n' \
-      > /usr/local/share/anki-connect/AnkiConnect/config.json
-
-RUN printf 'export QTWEBENGINE_CHROMIUM_FLAGS="${QTWEBENGINE_CHROMIUM_FLAGS:-} --no-sandbox --disable-gpu"\n' > /usr/local/bin/anki-env && \
-    chmod +x /usr/local/bin/anki-env
+ && rm -f /tmp/AnkiConnect.zip
 
 COPY anki-launcher /usr/local/bin/anki-launcher
 COPY seed-prefs.py /usr/local/bin/seed-prefs.py
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY s6-rc.d/ /etc/s6-overlay/s6-rc.d/
+COPY user-bundles.d/ /etc/s6-overlay/user-bundles.d/
 
-RUN chmod +x /usr/local/bin/anki-launcher
+RUN chmod +x /usr/local/bin/anki-launcher \
+ && chmod +x /etc/s6-overlay/s6-rc.d/*/run \
+ && mkdir -p /data/anki
+
+ENV S6_CMD_WAIT_FOR_SERVICES_MAXTIME=0
 
 EXPOSE 5900 8765 8780
 
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+ENTRYPOINT ["/init"]

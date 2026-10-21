@@ -14,55 +14,63 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Current versions in Dockerfile
+      # The image installs Anki from the Alpine package repo, so the version
+      # to compare against is the one currently in edge/community - not the
+      # upstream GitHub release.
+      - name: Alpine anki version
+        id: alpine
+        run: |
+          set -euo pipefail
+          ver="$(
+            curl -fsSL -o /tmp/APKINDEX.tar.gz \
+              https://dl-cdn.alpinelinux.org/alpine/edge/community/x86_64/APKINDEX.tar.gz
+            tar xzf /tmp/APKINDEX.tar.gz -O APKINDEX > /tmp/APKINDEX
+            grep -A1 -m1 '^P:anki$' /tmp/APKINDEX | tail -1 | cut -d: -f2
+          )"
+          echo "Alpine anki: $ver"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Current AnkiConnect version
         id: current
         run: |
-          {
-            echo "anki=$(grep -o 'ankitects/anki/releases/download/[0-9.]*/' Dockerfile | grep -o '[0-9.]*')"
-            echo "ankiconnect=$(grep -o 'ANKICONNECT_VERSION=[0-9.]*' Dockerfile | cut -d= -f2)"
-          } >> "$GITHUB_OUTPUT"
+          echo "ankiconnect=$(grep -o 'ANKICONNECT_VERSION=[0-9.]*' Dockerfile | cut -d= -f2)" >> "$GITHUB_OUTPUT"
 
-      - name: Latest upstream releases
+      - name: Latest AnkiConnect release
         id: latest
         run: |
-          {
-            echo "anki=$(curl -fsSL https://api.github.com/repos/ankitects/anki/releases/latest | grep -o '"tag_name": *"[^"]*"' | grep -o '[0-9.]*')"
-            echo "ankiconnect=$(curl -fsSL https://api.github.com/repos/FooSoft/anki-connect/releases/latest | grep -o '"tag_name": *"[^"]*"' | grep -o '[0-9.]*')"
-          } >> "$GITHUB_OUTPUT"
+          echo "ankiconnect=$(curl -fsSL https://api.github.com/repos/FooSoft/anki-connect/releases/latest | grep -o '"tag_name": *"[^"]*"' | grep -o '[0-9.]*')" >> "$GITHUB_OUTPUT"
 
       - name: Create update PR if outdated
         env:
           GH_TOKEN: ${{ github.token }}
+          ANKI_OLD: ${{ steps.alpine.outputs.version }}
+          AC_OLD: ${{ steps.current.outputs.ankiconnect }}
+          AC_NEW: ${{ steps.latest.outputs.ankiconnect }}
         run: |
           set -e
-          OLD_AM="$ANKI_OLD"; NEW_AM="$ANKI_NEW"; OLD_AC="$AC_OLD"; NEW_AC="$AC_NEW"
-          echo "Anki: $OLD_AM -> $NEW_AM | AnkiConnect: $OLD_AC -> $NEW_AC"
-          if [ "$OLD_AM" = "$NEW_AM" ] && [ "$OLD_AC" = "$NEW_AC" ]; then
+          # The Anki version comes from the Alpine package repo and is not
+          # pinned in the Dockerfile, so there is nothing to bump for it -
+          # pulling a newer base image is enough. Only AnkiConnect is pinned.
+          echo "Alpine anki: $ANKI_OLD (not pinned - bump the base image)"
+          echo "AnkiConnect: $AC_OLD -> $AC_NEW"
+          if [ "$AC_OLD" = "$AC_NEW" ]; then
             echo "Nothing to update."
             exit 0
           fi
-          BRANCH="update/anki-$NEW_AM-ankiconnect-$NEW_AC"
+          BRANCH="update/ankiconnect-$AC_NEW"
           git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.email "4189823+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          # Replace BOTH occurrences of each version token in the Dockerfile
-          sed -i "s|/$OLD_AM/anki-$OLD_AM-linux-|/$NEW_AM/anki-$NEW_AM-linux-|g" Dockerfile
-          sed -i "s|ANKICONNECT_VERSION=$OLD_AC|ANKICONNECT_VERSION=$NEW_AC|" Dockerfile
+          sed -i "s/ANKICONNECT_VERSION=$AC_OLD/ANKICONNECT_VERSION=$AC_NEW/" Dockerfile
           git diff --stat
           if git diff --quiet; then
             echo "Dockerfile unchanged unexpectedly."; exit 1
           fi
-          git commit -am "chore: bump anki desktop $OLD_AM -> $NEW_AM, anki-connect $OLD_AC -> $NEW_AC"
+          git commit -am "chore: bump anki-connect $AC_OLD -> $AC_NEW"
           git push -u origin "$BRANCH"
           gh pr create \
-            --title "chore: update Anki $NEW_AM / AnkiConnect $NEW_AC" \
-            --body "Automated dependency bump from scheduled CI. Merging triggers the two-arch build in CI; review the release notes before merging:
-          - https://github.com/ankitects/anki/releases
-          - https://github.com/FooSoft/anki-connect/releases" \
+            --title "chore: update AnkiConnect $AC_NEW" \
+            --body "Automated dependency bump from scheduled CI. Merging triggers the two-arch build in CI.
+
+Alpine's \`anki\` package is currently $ANKI_OLD; it is not pinned in the Dockerfile, so rebuilding picks it up." \
             --label dependencies || true
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ANKI_OLD: ${{ steps.current.outputs.anki }}
-          ANKI_NEW: ${{ steps.latest.outputs.anki }}
-          AC_OLD: ${{ steps.current.outputs.ankiconnect }}
-          AC_NEW: ${{ steps.latest.outputs.ankiconnect }}

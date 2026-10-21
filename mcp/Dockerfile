@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir "mcp>=1.2,<2.0" "httpx>=0.27,<1.0"
 COPY server.py .
 
 # AnkiConnect endpoint inside the compose network
-ENV ANKICONNECT_URL=http://anki-connect:8765 \
+ENV ANKICONNECT_URL=http://anki-lite:8765 \
     MCP_HOST=0.0.0.0 \
     MCP_PORT=8000
 

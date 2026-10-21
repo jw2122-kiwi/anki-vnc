@@ -1,37 +1,49 @@
 services:
-  anki-connect:
+  anki-lite:
     build:
       context: .
       dockerfile: Dockerfile
-    tty: true
-    stdin_open: true
-    container_name: anki-connect
+    container_name: anki-lite
     restart: unless-stopped
-    ipc: "shareable"
     ports:
       - "8765:8765" # AnkiConnect HTTP API
-      - "5900:5900" # VNC (x11vnc; no password - LAN use)
+      - "5900:5900" # VNC (no password - LAN use only)
       - "8780:8780" # noVNC web client (browser access)
     volumes:
       - ./data:/data/anki # persistent Anki profiles / collections
+    networks:
+      - anki-net
     healthcheck:
       test: |
-        wget -qO- --header='Content-Type: application/json' --post-data='{"action":"version","version":6}' http://localhost:8765 || exit 1
+        wget -qO- --header='Content-Type: application/json' --post-data='{"action":"version","version":6}' http://127.0.0.1:8765 || exit 1
       interval: 30s
       timeout: 5s
       retries: 3
+      # AnkiConnect only listens once a profile is open; allow time for first-run setup
       start_period: 120s
+    # Chromium needs more shared memory than the 64 MB Docker default.
+    shm_size: "256m"
 
-  # MCP server: exposes the Anki collection to AI clients (Claude, etc.)
-  # streamable HTTP at http://localhost:8890/mcp
+  # MCP server (streamable HTTP at /mcp) - see README.md
   mcp:
     build:
       context: ./mcp
       dockerfile: Dockerfile
-    container_name: anki-mcp
+    container_name: anki-lite-mcp
     restart: unless-stopped
     depends_on:
-      anki-connect:
+      anki-lite:
         condition: service_healthy
     ports:
       - "8890:8000"
+    networks:
+      - anki-net
+
+# Self-contained by default: `docker compose up -d --build` works on a fresh
+# machine without any extra setup. Set ANKI_NETWORK=anki-net and
+# ANKI_NETWORK_EXTERNAL=true to join the host's shared network instead
+# (used by the monorepo deployment).
+networks:
+  anki-net:
+    name: ${ANKI_NETWORK:-anki-lite-net}
+    external: ${ANKI_NETWORK_EXTERNAL:-false}

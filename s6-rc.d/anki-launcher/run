@@ -1,0 +1,4 @@
+#!/usr/bin/execlineb -S0
+# Anki desktop with the AnkiConnect addon.
+export DISPLAY :99
+exec /usr/local/bin/anki-launcher

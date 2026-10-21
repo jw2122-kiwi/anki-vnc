@@ -1,0 +1,18 @@
+#!/bin/sh
+# VNC server for the virtual display. No password: LAN use only.
+#
+# Xvfb can be "started" before its socket exists, and x11vnc exits when it
+# cannot open the display. Wait for the display socket to show up first.
+export DISPLAY=:99
+
+i=0
+while [ ! -S /tmp/.X11-unix/X99 ]; do
+  i=$((i + 1))
+  if [ "$i" -gt 60 ]; then
+    echo "x11vnc: display :99 never appeared" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+exec x11vnc -display :99 -forever -shared -nopw -rfbport 5900 -noxdamage

@@ -8,13 +8,16 @@ plugin and a lightweight virtual desktop (Xvfb + openbox + x11vnc + noVNC):
   afterwards every boot re-syncs automatically,
 - drive Anki programmatically over the AnkiConnect HTTP API.
 
+Built on **Alpine Linux** — the image is ~1.5 GB and the container idles at
+~300 MB RAM, about half of the equivalent Ubuntu-based image.
+
 Works on `amd64` and `arm64` (incl. Apple Silicon / ARM servers).
 
 ## Quickstart
 
 ```bash
-git clone https://github.com/<you>/anki-vnc.git && cd anki-vnc
-docker compose up -d --build      # first run builds the image (~3-5 min)
+git clone https://github.com/jw2122-kiwi/anki-vnc.git && cd anki-vnc
+docker compose up -d --build      # first run builds the image (~2-4 min)
 ```
 
 Then open in a browser:
@@ -60,13 +63,17 @@ consider setting an API key in `data/addons21/AnkiConnect/config.json`
 
 ## Files
 
-- `Dockerfile` — pinned Anki release + AnkiConnect plugin + X stack
-- `compose.yaml` — services (Anki desktop, MCP server), ports, persistence (`./data`), healthcheck
+- `Dockerfile` — Alpine base + `anki` package (bundles PyQt6/QtWebEngine),
+  AnkiConnect plugin, X stack, fonts
+- `compose.yaml` — services (Anki desktop, MCP server), ports, persistence
+  (`./data`), healthcheck
 - `mcp/` — MCP server bridging AnkiConnect (`server.py`)
-- `supervisord.conf` — process management inside the container
+- `s6-rc.d/`, `user-bundles.d/` — process management inside the container
+  (s6-overlay, Alpine's native supervisor)
 - `anki-launcher` — X display wait, AnkiConnect refresh, profile pick
 - `seed-prefs.py` — first-run wizard skip (writes `prefs21.db`)
-- `.github/workflows/` — `build.yml` (two-arch images on every push), `update.yml` (weekly dependency-bump PR)
+- `.github/workflows/` — `build.yml` (two-arch images on every push),
+  `update.yml` (weekly dependency-bump PR)
 
 ## MCP server (AI assistants)
 
@@ -95,14 +102,33 @@ Tools: `collection_overview`, `deck_stats`, `create_deck`, `search_cards`,
 `add_note`, `delete_notes`, `sync_with_ankiweb` — plus a `study_session`
 prompt. The server is unauthenticated; protect port 8890 like the rest.
 
+## Alpine specifics
+
+The image uses Alpine's own `anki` package, not the upstream Linux tarball
+(that one is glibc-linked and cannot run on musl). Consequences:
+
+- **Anki version** tracks the Alpine package (currently 26.08.1) and can lag
+  behind the [upstream release](https://github.com/ankitects/anki/releases).
+  Rebuild the image to pick up a newer package.
+- **Process supervision** uses s6-overlay rather than `supervisor`, which is
+  not packaged for Alpine.
+- **`localhost` resolves to `::1` first**, and AnkiConnect binds IPv4 only —
+  the healthcheck therefore targets `127.0.0.1`.
+- **`/dev/shm` is raised to 256 MB** (`shm_size` in `compose.yaml`); Chromium
+  needs more than Docker's 64 MB default.
+- **Fonts**: `font-noto` plus `-arabic`, `-symbols` and `-math` are installed.
+  Without the Arabic font, Arabic cards render as empty boxes.
+- **HTTPS**: `py3-truststore` is required, otherwise Anki cannot use the
+  system certificate store and the AnkiWeb sync is not safe.
+
 ## Automated updates
 
 A scheduled workflow (`.github/workflows/update.yml`, Mondays 06:00 UTC)
-compares the pinned versions in the `Dockerfile` against the latest
-[Anki desktop](https://github.com/ankitects/anki/releases) and
-[AnkiConnect](https://github.com/FooSoft/anki-connect/releases) releases and
-opens a PR when either is outdated. Merging the PR triggers the multi-arch
-build workflow; rebuild your deployment with
+compares the pinned AnkiConnect version in the `Dockerfile` against the latest
+[AnkiConnect](https://github.com/FooSoft/anki-connect/releases) release and
+opens a PR when it is outdated. The `anki` version itself is not pinned — it
+comes from the Alpine package repo and is updated by rebuilding. Merging a PR
+triggers the multi-arch build workflow; rebuild your deployment with
 `docker compose up -d --build`. Run it on demand via
 *Actions → update-deps → Run workflow*.
 
@@ -116,6 +142,6 @@ VNC on 5900 and noVNC on 8780 are unauthenticated. Options:
 
 ## Troubleshooting
 
-- `docker logs anki-connect` and `docker exec anki-connect supervisorctl status`
+- `docker logs anki-lite` and
+  `docker exec anki-lite s6-svstat /run/service/anki-launcher`
 - if a setup/sync dialog is showing in Anki instead of the deck list, finish it
-  in the browser — everything is clickable over noVNC.

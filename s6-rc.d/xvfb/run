@@ -1,0 +1,4 @@
+#!/usr/bin/execlineb -S0
+# Virtual X display for the Anki GUI.
+export DISPLAY :99
+exec Xvfb :99 -screen 0 1600x900x24 -nolisten tcp

@@ -13,12 +13,20 @@ set -euo pipefail
 BASE="${ANKI_BASE:-/data/anki}"
 export ANKI_BASE="$BASE"
 
-# Anki's QtWebEngine (Chromium) refuses to start as root without --no-sandbox
-source /usr/local/bin/anki-env 2>/dev/null || true
-export QTWEBENGINE_CHROMIUM_FLAGS="${QTWEBENGINE_CHROMIUM_FLAGS:-} --no-sandbox --disable-gpu"
+# Anki's QtWebEngine (Chromium) refuses to start as root without --no-sandbox.
+# The flags are set once here (the image sets the same values via ENV, so
+# guard against appending them twice).
+case "${QTWEBENGINE_CHROMIUM_FLAGS:-}" in
+  *--no-sandbox*) ;;
+  *) export QTWEBENGINE_CHROMIUM_FLAGS="${QTWEBENGINE_CHROMIUM_FLAGS:-} --no-sandbox" ;;
+esac
+case "${QTWEBENGINE_CHROMIUM_FLAGS}" in
+  *--disable-gpu*) ;;
+  *) export QTWEBENGINE_CHROMIUM_FLAGS="$QTWEBENGINE_CHROMIUM_FLAGS --disable-gpu" ;;
+esac
 
-# Wait for the virtual X display to exist (supervisord starts everything at
-# once; Anki's Qt crashes out on a race with Xvfb otherwise).
+# Wait for the virtual X display to exist (s6 starts everything at once; Anki's
+# Qt crashes out on a race with Xvfb otherwise).
 for i in $(seq 1 30); do
   if [ -S /tmp/.X11-unix/X99 ]; then
     break
@@ -29,8 +37,12 @@ done
 mkdir -p "$BASE/addons21"
 
 # Refresh AnkiConnect from the bundled copy (preserves any user meta.json).
-mkdir -p "$BASE/addons21/AnkiConnect"
-cp -a /usr/local/share/anki-connect/AnkiConnect/. "$BASE/addons21/AnkiConnect/"
+if [ -d /usr/local/share/anki-connect/AnkiConnect ]; then
+  mkdir -p "$BASE/addons21/AnkiConnect"
+  cp -a /usr/local/share/anki-connect/AnkiConnect/. "$BASE/addons21/AnkiConnect/"
+  printf '{\n  "webBindAddress": "0.0.0.0",\n  "webBindPort": 8765\n}\n' \
+    > "$BASE/addons21/AnkiConnect/config.json"
+fi
 
 # Skip Anki's interactive first-run wizard on cold boots (language picker +
 # profile setup). Anki still shows the normal sync login when you click Sync.
@@ -53,4 +65,4 @@ PYEOF
 )
 
 echo "Opening Anki profile: $PROFILE"
-exec /usr/local/bin/anki -b "$BASE" -p "$PROFILE"
+exec anki -b "$BASE" -p "$PROFILE"

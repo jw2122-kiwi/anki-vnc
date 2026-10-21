@@ -1,0 +1,4 @@
+#!/usr/bin/execlineb -S0
+# Minimal window manager so Anki's window has a frame and can be resized.
+export DISPLAY :99
+exec openbox --startup /usr/libexec/openbox-autostart
